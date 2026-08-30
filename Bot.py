@@ -32,6 +32,7 @@ DEFAULT_SERVICES = {
         "name": "📱 WhatsApp Number",
         "price": "₦4,500",
         "stock": "Available",
+        "description": "",
     },
     "textnow": {
         "name": "📲 TextNow",
@@ -117,21 +118,31 @@ def init_database():
             service_id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             price TEXT NOT NULL,
-            stock TEXT NOT NULL
+            stock TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT ""
         )
     """)
+
+    # Upgrade an existing database created by the previous bot version.
+    cursor.execute("PRAGMA table_info(services)")
+    service_columns = {row[1] for row in cursor.fetchall()}
+    if "description" not in service_columns:
+        cursor.execute(
+            'ALTER TABLE services ADD COLUMN description TEXT NOT NULL DEFAULT ""'
+        )
 
     # Add the default services only if they don't already exist.
     for service_id, service in DEFAULT_SERVICES.items():
         cursor.execute("""
             INSERT OR IGNORE INTO services
-            (service_id, name, price, stock)
-            VALUES (?, ?, ?, ?)
+            (service_id, name, price, stock, description)
+            VALUES (?, ?, ?, ?, ?)
         """, (
             service_id,
             service["name"],
             service["price"],
             service["stock"],
+            service.get("description", ""),
         ))
 
     conn.commit()
@@ -143,7 +154,7 @@ def get_services():
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT service_id, name, price, stock
+        SELECT service_id, name, price, stock, description
         FROM services
         ORDER BY rowid
     """)
@@ -156,8 +167,9 @@ def get_services():
             "name": name,
             "price": price,
             "stock": stock,
+            "description": description or "",
         }
-        for service_id, name, price, stock in rows
+        for service_id, name, price, stock, description in rows
     }
 
 
@@ -255,6 +267,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/addservice — Add a service\n"
             "/changeprice — Change a price\n"
             "/stock — Change stock\n"
+            "/changedescription — Change service description\n"
             "/deleteservice — Delete a service"
         )
 
@@ -274,6 +287,8 @@ async def adminhelp(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/addservice web_design | 🌐 Website Design | ₦30,000 | 10\n\n"
         "💰 Change price:\n"
         "/changeprice key | new price\n\n"
+        "📝 Change description:\n"
+        "/changedescription key | new description\n\n"
         "Example:\n"
         "/changeprice whatsapp | ₦5,000\n\n"
         "📦 Change stock:\n"
@@ -306,6 +321,7 @@ async def services_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"• {key}\n"
             f"  {service['name']}\n"
             f"  💰 {service['price']} | 📦 Stock: {service['stock']}\n"
+            + (f"  📝 {service['description']}\n" if service.get("description") else "")
         )
 
     await update.message.reply_text("\n".join(lines))
@@ -354,9 +370,9 @@ async def addservice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         cursor.execute("""
             INSERT INTO services
-            (service_id, name, price, stock)
-            VALUES (?, ?, ?, ?)
-        """, (service_id, name, price, stock))
+            (service_id, name, price, stock, description)
+            VALUES (?, ?, ?, ?, ?)
+        """, (service_id, name, price, stock, description))
 
         conn.commit()
 
@@ -375,7 +391,50 @@ async def addservice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🔑 Key: {service_id}\n"
         f"🛍️ Name: {name}\n"
         f"💰 Price: {price}\n"
-        f"📦 Stock: {stock}"
+        f"📦 Stock: {stock}\n"
+        f"📝 Description: {description or '(none)'}"
+    )
+
+
+async def changedescription(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not admin_only(update):
+        await update.message.reply_text("❌ Admin access only.")
+        return
+
+    raw = update.message.text.partition(" ")[2].strip()
+    parts = [part.strip() for part in raw.split("|", 1)]
+
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        await update.message.reply_text(
+            "❌ Format:\n"
+            "/changedescription key | new description\n\n"
+            "Example:\n"
+            "/changedescription tiktok_followers | ⚡ Speed: 100K/day; 🔄 Refill: 30 days; ⚡ Instant start"
+        )
+        return
+
+    service_id, new_description = parts
+
+    conn = db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE services SET description = ? WHERE service_id = ?",
+        (new_description, service_id)
+    )
+    changed = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    if changed == 0:
+        await update.message.reply_text(
+            f"❌ Service '{service_id}' was not found."
+        )
+        return
+
+    await update.message.reply_text(
+        f"✅ Description updated!\n\n"
+        f"🛍️ Service: {service_id}\n"
+        f"📝 New description: {new_description}"
     )
 
 
@@ -537,9 +596,12 @@ async def service_selected(
         )
         return
 
+    description = service.get("description", "").strip()
+
     text = (
         f"{service['name']}\n\n"
-        f"💰 Price: {service['price']}\n"
+        + (f"{description}\n\n" if description else "")
+        + f"💰 Price: {service['price']}\n"
         f"📦 Stock: {service['stock']}\n\n"
         "💳 Payment Details\n"
         f"Bank: {BANK}\n"
@@ -614,6 +676,7 @@ def main():
     app.add_handler(CommandHandler("services", services_command))
     app.add_handler(CommandHandler("addservice", addservice))
     app.add_handler(CommandHandler("changeprice", changeprice))
+    app.add_handler(CommandHandler("changedescription", changedescription))
     app.add_handler(CommandHandler("stock", stock))
     app.add_handler(CommandHandler("deleteservice", deleteservice))
 
