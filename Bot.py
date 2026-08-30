@@ -113,6 +113,16 @@ DEFAULT_SERVICES = {
         "price": "₦2,300",
         "stock": "23",
     },
+
+    # ========================================================
+    # SEND GIFT
+    # ========================================================
+
+    "send_gift": {
+        "name": "🎁 Send Gift",
+        "price": "Contact Admin",
+        "stock": "Available",
+    },
 }
 
 
@@ -399,6 +409,47 @@ async def service_selected(
         )
 
         return
+
+    # ========================================================
+    # SEND GIFT SPECIAL HANDLER
+    # ========================================================
+
+    if key == "send_gift":
+
+        text = (
+            "🎁 SEND GIFT\n\n"
+            "Want to send a gift? 🎁\n\n"
+            "Contact our admin to place your request "
+            "and get the available gift options.\n\n"
+            "💬 Click the button below to contact Admin."
+        )
+
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    "💬 Contact Admin",
+                    url=f"https://t.me/{ADMIN_USERNAME}"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    "⬅️ Back to Services",
+                    callback_data="back_services"
+                )
+            ]
+        ])
+
+        await query.edit_message_text(
+            text,
+            reply_markup=keyboard
+        )
+
+        return
+
+    # ========================================================
+    # NORMAL SERVICES
+    # ========================================================
 
     bank = get_setting("bank")
     account_name = get_setting("account_name")
