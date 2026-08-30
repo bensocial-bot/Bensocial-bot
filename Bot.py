@@ -1,5 +1,6 @@
 import os
 import sqlite3
+from urllib.parse import quote
 
 from telegram import (
     Update,
@@ -16,7 +17,6 @@ from telegram.ext import (
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
 ADMIN_USERNAME = os.getenv(
     "ADMIN_USERNAME",
     "silverfoxoftiktok"
@@ -65,11 +65,6 @@ DEFAULT_SERVICES = {
         "price": "₦56,000",
         "stock": "7",
     },
-    "telegram_verification": {
-        "name": "✅ Telegram Verification",
-        "price": "₦10,000",
-        "stock": "9",
-    },
     "apple": {
         "name": "🍎 Apple iCloud",
         "price": "₦7,000",
@@ -99,49 +94,6 @@ DEFAULT_SERVICES = {
 
 
 # =========================
-# DEFAULT VERIFICATION SERVICES
-# =========================
-
-DEFAULT_VERIFICATIONS = {
-    "whatsapp": {
-        "name": "📱 WhatsApp Verification",
-        "price": "₦0",
-        "stock": "0",
-    },
-    "facebook": {
-        "name": "📘 Facebook Verification",
-        "price": "₦0",
-        "stock": "0",
-    },
-    "telegram": {
-        "name": "✈️ Telegram Verification",
-        "price": "₦0",
-        "stock": "0",
-    },
-    "tiktok": {
-        "name": "🎵 TikTok Verification",
-        "price": "₦0",
-        "stock": "0",
-    },
-    "doordash": {
-        "name": "🚗 DoorDash Verification",
-        "price": "₦0",
-        "stock": "0",
-    },
-    "google_voice": {
-        "name": "📞 Google Voice Verification",
-        "price": "₦0",
-        "stock": "0",
-    },
-    "instagram": {
-        "name": "📸 Instagram Verification",
-        "price": "₦0",
-        "stock": "0",
-    },
-}
-
-
-# =========================
 # DATABASE
 # =========================
 
@@ -155,15 +107,6 @@ def init_database():
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS services (
-            key TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            price TEXT NOT NULL,
-            stock TEXT NOT NULL
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS verifications (
             key TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             price TEXT NOT NULL,
@@ -190,18 +133,7 @@ def init_database():
             service["stock"],
         ))
 
-    for key, item in DEFAULT_VERIFICATIONS.items():
-        cursor.execute("""
-            INSERT OR IGNORE INTO verifications
-            (key, name, price, stock)
-            VALUES (?, ?, ?, ?)
-        """, (
-            key,
-            item["name"],
-            item["price"],
-            item["stock"],
-        ))
-
+    # These are only used when the database is created for the first time.
     defaults = {
         "bank": "OPay",
         "account_name": "TOLUWANI BENJAMIN/Bensocial",
@@ -296,53 +228,6 @@ def get_service(key):
     }
 
 
-def get_verifications():
-    conn = get_db()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT key, name, price, stock
-        FROM verifications
-        ORDER BY rowid
-    """)
-
-    rows = cursor.fetchall()
-    conn.close()
-
-    return {
-        row[0]: {
-            "name": row[1],
-            "price": row[2],
-            "stock": row[3],
-        }
-        for row in rows
-    }
-
-
-def get_verification(key):
-    conn = get_db()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT key, name, price, stock
-        FROM verifications
-        WHERE key = ?
-    """, (key,))
-
-    row = cursor.fetchone()
-    conn.close()
-
-    if not row:
-        return None
-
-    return {
-        "key": row[0],
-        "name": row[1],
-        "price": row[2],
-        "stock": row[3],
-    }
-
-
 # =========================
 # ADMIN SECURITY
 # =========================
@@ -359,14 +244,11 @@ def is_admin(update: Update):
 
 
 async def admin_only(update: Update):
-
     if not is_admin(update):
-
         if update.message:
             await update.message.reply_text(
                 "⛔ Admin only."
             )
-
         return False
 
     return True
@@ -377,17 +259,14 @@ async def admin_only(update: Update):
 # =========================
 
 def services_keyboard():
-
     buttons = []
 
     services = list(get_services().items())
 
     for i in range(0, len(services), 2):
-
         row = []
 
         for key, service in services[i:i + 2]:
-
             row.append(
                 InlineKeyboardButton(
                     service["name"],
@@ -397,13 +276,6 @@ def services_keyboard():
 
         buttons.append(row)
 
-    buttons.append([
-        InlineKeyboardButton(
-            "💬 Contact Admin",
-            url=f"https://t.me/{ADMIN_USERNAME}"
-        )
-    ])
-
     return InlineKeyboardMarkup(buttons)
 
 
@@ -411,7 +283,6 @@ async def start(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
-
     await update.message.reply_text(
         "👋 Welcome to Bensocial Bot!\n\n"
         "🛍️ Choose a service below:",
@@ -423,7 +294,6 @@ async def help_command(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
-
     await update.message.reply_text(
         "🤖 Bensocial Bot\n\n"
         "/start — Open services\n"
@@ -439,25 +309,17 @@ async def service_selected(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
-
     query = update.callback_query
-
     await query.answer()
 
-    key = query.data.replace(
-        "service:",
-        "",
-        1
-    )
+    key = query.data.replace("service:", "", 1)
 
     service = get_service(key)
 
     if not service:
-
         await query.edit_message_text(
             "❌ Service not found."
         )
-
         return
 
     bank = get_setting("bank")
@@ -468,19 +330,22 @@ async def service_selected(
         f"{service['name']}\n\n"
         f"💰 Price: {service['price']}\n"
         f"📦 Stock: {service['stock']}\n\n"
-        "💳 Payment Details\n"
-        f"Bank: {bank}\n"
-        f"Account Name: {account_name}\n"
-        f"Account Number: {account_number}\n\n"
-        "After payment, contact the admin "
-        "with your payment receipt/order details."
+
+        "💳 PAYMENT DETAILS\n"
+        f"🏦 Bank: {bank}\n"
+        f"👤 Account Name: {account_name}\n"
+        f"💳 Account Number: {account_number}\n\n"
+
+        "Please make payment using the details above.\n\n"
+        "After making payment, tap "
+        "the button below and send your receipt."
     )
 
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
-                "💬 Contact Admin",
-                url=f"https://t.me/{ADMIN_USERNAME}"
+                "💳 I've Made Payment",
+                callback_data=f"payment:{key}"
             )
         ],
         [
@@ -497,13 +362,170 @@ async def service_selected(
     )
 
 
+# =========================
+# PAYMENT START
+# =========================
+
+async def payment_started(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    query = update.callback_query
+    await query.answer()
+
+    key = query.data.replace("payment:", "", 1)
+
+    service = get_service(key)
+
+    if not service:
+        await query.edit_message_text(
+            "❌ Service not found."
+        )
+        return
+
+    context.user_data["awaiting_receipt"] = True
+    context.user_data["payment_service"] = key
+
+    await query.edit_message_text(
+        "💳 PAYMENT RECEIPT\n\n"
+        f"🛍️ Service: {service['name']}\n"
+        f"💰 Amount: {service['price']}\n\n"
+
+        "📸 Please send your payment "
+        "receipt/screenshot now.\n\n"
+
+        "You can send it as an image or document.\n\n"
+
+        "⚠️ Your payment will be verified by "
+        "the admin before your order is fulfilled."
+    )
+
+
+# =========================
+# RECEIPT HANDLER
+# =========================
+
+async def handle_receipt(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    if not context.user_data.get("awaiting_receipt"):
+        return False
+
+    admin_chat_id = get_setting("admin_chat_id")
+
+    if not admin_chat_id:
+        await update.message.reply_text(
+            "❌ Admin is not connected yet.\n\n"
+            "Please try again later."
+        )
+        return True
+
+    service_key = context.user_data.get(
+        "payment_service"
+    )
+
+    service = get_service(service_key)
+
+    if not service:
+        await update.message.reply_text(
+            "❌ Service information could not be found."
+        )
+        return True
+
+    user = update.effective_user
+
+    username = (
+        f"@{user.username}"
+        if user.username
+        else "No username"
+    )
+
+    user_name = user.full_name or "Unknown"
+
+    admin_text = (
+        "💰 NEW PAYMENT RECEIPT\n\n"
+        f"👤 Customer: {user_name}\n"
+        f"🔹 Username: {username}\n"
+        f"🆔 User ID: {user.id}\n\n"
+        f"🛍️ Service: {service['name']}\n"
+        f"💵 Price: {service['price']}\n\n"
+        "⚠️ PAYMENT NOT YET VERIFIED.\n"
+        "Please verify the payment before "
+        "fulfilling the order."
+    )
+
+    await context.bot.send_message(
+        chat_id=int(admin_chat_id),
+        text=admin_text
+    )
+
+    # Receipt must be an image or document.
+    if update.message.photo:
+
+        await context.bot.send_photo(
+            chat_id=int(admin_chat_id),
+            photo=update.message.photo[-1].file_id,
+            caption="📸 Customer payment receipt"
+        )
+
+    elif update.message.document:
+
+        await context.bot.send_document(
+            chat_id=int(admin_chat_id),
+            document=update.message.document.file_id,
+            caption="📄 Customer payment receipt"
+        )
+
+    else:
+        await update.message.reply_text(
+            "❌ Please send your receipt as "
+            "a screenshot/image or document."
+        )
+        return True
+
+    context.user_data["awaiting_receipt"] = False
+
+    admin_url = f"https://t.me/{ADMIN_USERNAME}"
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "💬 Contact Admin",
+                url=admin_url
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "⬅️ Back to Services",
+                callback_data="back_services"
+            )
+        ]
+    ])
+
+    await update.message.reply_text(
+        "✅ RECEIPT SUBMITTED\n\n"
+        f"🛍️ Service: {service['name']}\n"
+        f"💰 Amount: {service['price']}\n\n"
+        "Your receipt has been sent to the admin.\n"
+        "Please wait while your payment is verified.\n\n"
+        "You can now contact the admin if you "
+        "need to provide additional information.",
+        reply_markup=keyboard
+    )
+
+    return True
+
+
+# =========================
+# BACK TO SERVICES
+# =========================
+
 async def back_to_services(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
-
     query = update.callback_query
-
     await query.answer()
 
     await query.edit_message_text(
@@ -520,9 +542,14 @@ async def admin_command(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
-
     if not await admin_only(update):
         return
+
+    # Save admin chat ID for receipt notifications.
+    set_setting(
+        "admin_chat_id",
+        str(update.effective_chat.id)
+    )
 
     await update.message.reply_text(
         "🔐 BENSOCIAL ADMIN\n\n"
@@ -551,12 +578,7 @@ async def admin_command(
         "🔎 PAYMENT INFO\n"
         "/paymentinfo\n\n"
 
-        "🔐 VERIFICATION NUMBERS\n"
-        "/verifications\n"
-        "/addverification key | name | price | stock\n"
-        "/changeverificationprice key | new price\n"
-        "/changeverificationstock key | new stock\n"
-        "/deleteverification key"
+        "✅ Admin chat connected."
     )
 
 
@@ -568,7 +590,6 @@ async def add_service(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
-
     if not await admin_only(update):
         return
 
@@ -580,18 +601,13 @@ async def add_service(
     ]
 
     if len(parts) != 4:
-
         await update.message.reply_text(
             "❌ Format:\n\n"
             "/addservice key | name | price | stock\n\n"
             "Example:\n"
-            "/addservice "
-            "tiktok_followers | "
-            "🎵 TikTok Followers | "
-            "₦4,536/1k | "
-            "Available"
+            "/addservice tiktok_followers | "
+            "🎵 TikTok Followers | ₦4,536 | Available"
         )
-
         return
 
     key, name, price, stock = parts
@@ -600,19 +616,16 @@ async def add_service(
         character.isalnum() or character == "_"
         for character in key
     ):
-
         await update.message.reply_text(
-            "❌ Key can only contain "
-            "letters, numbers and underscores."
+            "❌ Key can only contain letters, "
+            "numbers and underscores."
         )
-
         return
 
     conn = get_db()
     cursor = conn.cursor()
 
     try:
-
         cursor.execute("""
             INSERT INTO services
             (key, name, price, stock)
@@ -627,13 +640,11 @@ async def add_service(
         conn.commit()
 
     except sqlite3.IntegrityError:
-
         conn.close()
 
         await update.message.reply_text(
             "❌ That service key already exists."
         )
-
         return
 
     conn.close()
@@ -655,7 +666,6 @@ async def change_price(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
-
     if not await admin_only(update):
         return
 
@@ -667,14 +677,12 @@ async def change_price(
     ]
 
     if len(parts) != 2:
-
         await update.message.reply_text(
             "❌ Format:\n\n"
             "/changeprice key | new price\n\n"
             "Example:\n"
             "/changeprice whatsapp | ₦5,000"
         )
-
         return
 
     key, price = parts
@@ -682,11 +690,9 @@ async def change_price(
     service = get_service(key.lower())
 
     if not service:
-
         await update.message.reply_text(
             "❌ Service not found."
         )
-
         return
 
     conn = get_db()
@@ -719,7 +725,6 @@ async def change_stock(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
-
     if not await admin_only(update):
         return
 
@@ -731,14 +736,12 @@ async def change_stock(
     ]
 
     if len(parts) != 2:
-
         await update.message.reply_text(
             "❌ Format:\n\n"
             "/stock key | new stock\n\n"
             "Example:\n"
             "/stock whatsapp | 20"
         )
-
         return
 
     key, stock = parts
@@ -746,11 +749,9 @@ async def change_stock(
     service = get_service(key.lower())
 
     if not service:
-
         await update.message.reply_text(
             "❌ Service not found."
         )
-
         return
 
     conn = get_db()
@@ -783,24 +784,20 @@ async def list_services(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
-
     if not await admin_only(update):
         return
 
     services = get_services()
 
     if not services:
-
         await update.message.reply_text(
             "📋 No services."
         )
-
         return
 
     text = "📋 BENSOCIAL SERVICES\n\n"
 
     for key, service in services.items():
-
         text += (
             f"🔑 {key}\n"
             f"{service['name']}\n"
@@ -819,7 +816,6 @@ async def delete_service(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
-
     if not await admin_only(update):
         return
 
@@ -828,22 +824,18 @@ async def delete_service(
     )[2].strip().lower()
 
     if not key:
-
         await update.message.reply_text(
             "❌ Example:\n"
             "/deleteservice whatsapp"
         )
-
         return
 
     service = get_service(key)
 
     if not service:
-
         await update.message.reply_text(
             "❌ Service not found."
         )
-
         return
 
     conn = get_db()
@@ -870,35 +862,29 @@ async def change_account(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
-
     if not await admin_only(update):
         return
 
     message = update.message.text
 
-    content = message.partition(
-        "\n"
-    )[2].strip()
+    # Everything after /changeaccount
+    content = message.partition(" ")[2].strip()
 
+    # If there was no space, try after the command/newline.
     if not content:
-
-        content = message.partition(
-            " "
-        )[2].strip()
+        content = message.partition("\n")[2].strip()
 
     account_number = ""
     bank = ""
     account_name = ""
 
+    # Handle multiline format.
     for line in content.splitlines():
 
         if ":" not in line:
             continue
 
-        label, value = line.split(
-            ":",
-            1
-        )
+        label, value = line.split(":", 1)
 
         label = label.strip().lower()
         value = value.strip()
@@ -920,19 +906,19 @@ async def change_account(
         ):
             account_name = value
 
+    # Handle:
+    # /changeaccount number | bank | name
     if not (
         account_number
         and bank
         and account_name
     ):
-
         parts = [
             part.strip()
             for part in content.split("|")
         ]
 
         if len(parts) == 3:
-
             account_number = parts[0]
             bank = parts[1]
             account_name = parts[2]
@@ -942,9 +928,8 @@ async def change_account(
         and bank
         and account_name
     ):
-
         await update.message.reply_text(
-            "❌ Use this format:\n\n"
+            "❌ Use either:\n\n"
 
             "/changeaccount\n"
             "Account Number: 6550518571\n"
@@ -958,7 +943,6 @@ async def change_account(
             "OPay | "
             "TOLUWANI BENJAMIN/Bensocial"
         )
-
         return
 
     set_setting(
@@ -992,7 +976,6 @@ async def payment_info(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
-
     if not await admin_only(update):
         return
 
@@ -1007,301 +990,6 @@ async def payment_info(
 
 
 # =========================
-# VERIFICATION COMMANDS
-# =========================
-
-async def verifications_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
-
-    if not await admin_only(update):
-        return
-
-    items = get_verifications()
-
-    if not items:
-
-        await update.message.reply_text(
-            "📋 No verification services."
-        )
-
-        return
-
-    text = "🔐 VERIFICATION SERVICES\n\n"
-
-    for key, item in items.items():
-
-        text += (
-            f"🔑 {key}\n"
-            f"{item['name']}\n"
-            f"💰 {item['price']}\n"
-            f"📦 Stock: {item['stock']}\n\n"
-        )
-
-    await update.message.reply_text(text)
-
-
-async def add_verification(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
-
-    if not await admin_only(update):
-        return
-
-    raw = update.message.text.partition(
-        " "
-    )[2].strip()
-
-    parts = [
-        part.strip()
-        for part in raw.split("|")
-    ]
-
-    if len(parts) != 4:
-
-        await update.message.reply_text(
-            "❌ Format:\n\n"
-            "/addverification key | name | price | stock\n\n"
-            "Example:\n"
-            "/addverification whatsapp | "
-            "📱 WhatsApp Verification | "
-            "₦2,500 | 20"
-        )
-
-        return
-
-    key, name, price, stock = parts
-
-    if not all(
-        character.isalnum() or character == "_"
-        for character in key
-    ):
-
-        await update.message.reply_text(
-            "❌ Key can only contain "
-            "letters, numbers and underscores."
-        )
-
-        return
-
-    conn = get_db()
-    cursor = conn.cursor()
-
-    try:
-
-        cursor.execute("""
-            INSERT INTO verifications
-            (key, name, price, stock)
-            VALUES (?, ?, ?, ?)
-        """, (
-            key.lower(),
-            name,
-            price,
-            stock
-        ))
-
-        conn.commit()
-
-    except sqlite3.IntegrityError:
-
-        conn.close()
-
-        await update.message.reply_text(
-            "❌ That verification key already exists."
-        )
-
-        return
-
-    conn.close()
-
-    await update.message.reply_text(
-        "✅ Verification service added!\n\n"
-        f"🔑 Key: {key.lower()}\n"
-        f"📌 Name: {name}\n"
-        f"💰 Price: {price}\n"
-        f"📦 Stock: {stock}"
-    )
-
-
-async def change_verification_price(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
-
-    if not await admin_only(update):
-        return
-
-    raw = update.message.text.partition(
-        " "
-    )[2].strip()
-
-    parts = [
-        part.strip()
-        for part in raw.split("|")
-    ]
-
-    if len(parts) != 2:
-
-        await update.message.reply_text(
-            "❌ Format:\n\n"
-            "/changeverificationprice key | new price\n\n"
-            "Example:\n"
-            "/changeverificationprice whatsapp | ₦2,500"
-        )
-
-        return
-
-    key, price = parts
-
-    item = get_verification(
-        key.lower()
-    )
-
-    if not item:
-
-        await update.message.reply_text(
-            "❌ Verification service not found."
-        )
-
-        return
-
-    conn = get_db()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        UPDATE verifications
-        SET price = ?
-        WHERE key = ?
-    """, (
-        price,
-        key.lower()
-    ))
-
-    conn.commit()
-    conn.close()
-
-    await update.message.reply_text(
-        "✅ Verification price updated!\n\n"
-        f"{item['name']}\n"
-        f"💰 New price: {price}"
-    )
-
-
-async def change_verification_stock(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
-
-    if not await admin_only(update):
-        return
-
-    raw = update.message.text.partition(
-        " "
-    )[2].strip()
-
-    parts = [
-        part.strip()
-        for part in raw.split("|")
-    ]
-
-    if len(parts) != 2:
-
-        await update.message.reply_text(
-            "❌ Format:\n\n"
-            "/changeverificationstock key | new stock\n\n"
-            "Example:\n"
-            "/changeverificationstock whatsapp | 20"
-        )
-
-        return
-
-    key, stock = parts
-
-    item = get_verification(
-        key.lower()
-    )
-
-    if not item:
-
-        await update.message.reply_text(
-            "❌ Verification service not found."
-        )
-
-        return
-
-    conn = get_db()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        UPDATE verifications
-        SET stock = ?
-        WHERE key = ?
-    """, (
-        stock,
-        key.lower()
-    ))
-
-    conn.commit()
-    conn.close()
-
-    await update.message.reply_text(
-        "✅ Verification stock updated!\n\n"
-        f"{item['name']}\n"
-        f"📦 New stock: {stock}"
-    )
-
-
-async def delete_verification(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
-
-    if not await admin_only(update):
-        return
-
-    key = update.message.text.partition(
-        " "
-    )[2].strip().lower()
-
-    if not key:
-
-        await update.message.reply_text(
-            "❌ Example:\n"
-            "/deleteverification whatsapp"
-        )
-
-        return
-
-    item = get_verification(key)
-
-    if not item:
-
-        await update.message.reply_text(
-            "❌ Verification service not found."
-        )
-
-        return
-
-    conn = get_db()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "DELETE FROM verifications WHERE key = ?",
-        (key,)
-    )
-
-    conn.commit()
-    conn.close()
-
-    await update.message.reply_text(
-        f"🗑️ Verification service deleted:\n"
-        f"{item['name']}"
-    )
-
-
-# =========================
 # NORMAL MESSAGES
 # =========================
 
@@ -1309,6 +997,16 @@ async def handle_message(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
+    # If customer is currently expected to send
+    # a receipt, let handle_receipt process it.
+    if context.user_data.get("awaiting_receipt"):
+        handled = await handle_receipt(
+            update,
+            context
+        )
+
+        if handled:
+            return
 
     await update.message.reply_text(
         "💬 Please choose a service:",
@@ -1317,13 +1015,12 @@ async def handle_message(
 
 
 # =========================
-# START BOT
+# MAIN
 # =========================
 
 def main():
 
     if not BOT_TOKEN:
-
         raise RuntimeError(
             "BOT_TOKEN environment variable is missing."
         )
@@ -1379,42 +1076,6 @@ def main():
         CommandHandler("paymentinfo", payment_info)
     )
 
-    # Verification commands
-    app.add_handler(
-        CommandHandler(
-            "verifications",
-            verifications_command
-        )
-    )
-
-    app.add_handler(
-        CommandHandler(
-            "addverification",
-            add_verification
-        )
-    )
-
-    app.add_handler(
-        CommandHandler(
-            "changeverificationprice",
-            change_verification_price
-        )
-    )
-
-    app.add_handler(
-        CommandHandler(
-            "changeverificationstock",
-            change_verification_stock
-        )
-    )
-
-    app.add_handler(
-        CommandHandler(
-            "deleteverification",
-            delete_verification
-        )
-    )
-
     # Buttons
     app.add_handler(
         CallbackQueryHandler(
@@ -1425,8 +1086,23 @@ def main():
 
     app.add_handler(
         CallbackQueryHandler(
+            payment_started,
+            pattern=r"^payment:"
+        )
+    )
+
+    app.add_handler(
+        CallbackQueryHandler(
             back_to_services,
             pattern=r"^back_services$"
+        )
+    )
+
+    # Receipt images/documents
+    app.add_handler(
+        MessageHandler(
+            filters.PHOTO | filters.Document.ALL,
+            handle_receipt
         )
     )
 
