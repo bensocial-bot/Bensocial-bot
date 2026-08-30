@@ -16,6 +16,7 @@ from telegram.ext import (
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+
 ADMIN_USERNAME = os.getenv(
     "ADMIN_USERNAME",
     "silverfoxoftiktok"
@@ -98,6 +99,49 @@ DEFAULT_SERVICES = {
 
 
 # =========================
+# DEFAULT VERIFICATION SERVICES
+# =========================
+
+DEFAULT_VERIFICATIONS = {
+    "whatsapp": {
+        "name": "📱 WhatsApp Verification",
+        "price": "₦0",
+        "stock": "0",
+    },
+    "facebook": {
+        "name": "📘 Facebook Verification",
+        "price": "₦0",
+        "stock": "0",
+    },
+    "telegram": {
+        "name": "✈️ Telegram Verification",
+        "price": "₦0",
+        "stock": "0",
+    },
+    "tiktok": {
+        "name": "🎵 TikTok Verification",
+        "price": "₦0",
+        "stock": "0",
+    },
+    "doordash": {
+        "name": "🚗 DoorDash Verification",
+        "price": "₦0",
+        "stock": "0",
+    },
+    "google_voice": {
+        "name": "📞 Google Voice Verification",
+        "price": "₦0",
+        "stock": "0",
+    },
+    "instagram": {
+        "name": "📸 Instagram Verification",
+        "price": "₦0",
+        "stock": "0",
+    },
+}
+
+
+# =========================
 # DATABASE
 # =========================
 
@@ -111,6 +155,15 @@ def init_database():
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS services (
+            key TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            price TEXT NOT NULL,
+            stock TEXT NOT NULL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS verifications (
             key TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             price TEXT NOT NULL,
@@ -137,10 +190,22 @@ def init_database():
             service["stock"],
         ))
 
+    for key, item in DEFAULT_VERIFICATIONS.items():
+        cursor.execute("""
+            INSERT OR IGNORE INTO verifications
+            (key, name, price, stock)
+            VALUES (?, ?, ?, ?)
+        """, (
+            key,
+            item["name"],
+            item["price"],
+            item["stock"],
+        ))
+
     defaults = {
-        "bank": "Opay (Paycom)",
-        "account_name": "Toluwani Awe",
-        "account_number": "8165405921",
+        "bank": "OPay",
+        "account_name": "TOLUWANI BENJAMIN/Bensocial",
+        "account_number": "6550518571",
     }
 
     for key, value in defaults.items():
@@ -231,6 +296,53 @@ def get_service(key):
     }
 
 
+def get_verifications():
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT key, name, price, stock
+        FROM verifications
+        ORDER BY rowid
+    """)
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return {
+        row[0]: {
+            "name": row[1],
+            "price": row[2],
+            "stock": row[3],
+        }
+        for row in rows
+    }
+
+
+def get_verification(key):
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT key, name, price, stock
+        FROM verifications
+        WHERE key = ?
+    """, (key,))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    return {
+        "key": row[0],
+        "name": row[1],
+        "price": row[2],
+        "stock": row[3],
+    }
+
+
 # =========================
 # ADMIN SECURITY
 # =========================
@@ -249,10 +361,12 @@ def is_admin(update: Update):
 async def admin_only(update: Update):
 
     if not is_admin(update):
+
         if update.message:
             await update.message.reply_text(
                 "⛔ Admin only."
             )
+
         return False
 
     return True
@@ -435,7 +549,14 @@ async def admin_command(
         "Account Name: TOLUWANI BENJAMIN/Bensocial\n\n"
 
         "🔎 PAYMENT INFO\n"
-        "/paymentinfo"
+        "/paymentinfo\n\n"
+
+        "🔐 VERIFICATION NUMBERS\n"
+        "/verifications\n"
+        "/addverification key | name | price | stock\n"
+        "/changeverificationprice key | new price\n"
+        "/changeverificationstock key | new stock\n"
+        "/deleteverification key"
     )
 
 
@@ -755,12 +876,10 @@ async def change_account(
 
     message = update.message.text
 
-    # Remove /changeaccount
     content = message.partition(
         "\n"
     )[2].strip()
 
-    # Also support one-line format
     if not content:
 
         content = message.partition(
@@ -771,7 +890,6 @@ async def change_account(
     bank = ""
     account_name = ""
 
-    # Multi-line format
     for line in content.splitlines():
 
         if ":" not in line:
@@ -802,8 +920,6 @@ async def change_account(
         ):
             account_name = value
 
-    # One-line format:
-    # /changeaccount number | bank | name
     if not (
         account_number
         and bank
@@ -891,6 +1007,301 @@ async def payment_info(
 
 
 # =========================
+# VERIFICATION COMMANDS
+# =========================
+
+async def verifications_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if not await admin_only(update):
+        return
+
+    items = get_verifications()
+
+    if not items:
+
+        await update.message.reply_text(
+            "📋 No verification services."
+        )
+
+        return
+
+    text = "🔐 VERIFICATION SERVICES\n\n"
+
+    for key, item in items.items():
+
+        text += (
+            f"🔑 {key}\n"
+            f"{item['name']}\n"
+            f"💰 {item['price']}\n"
+            f"📦 Stock: {item['stock']}\n\n"
+        )
+
+    await update.message.reply_text(text)
+
+
+async def add_verification(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if not await admin_only(update):
+        return
+
+    raw = update.message.text.partition(
+        " "
+    )[2].strip()
+
+    parts = [
+        part.strip()
+        for part in raw.split("|")
+    ]
+
+    if len(parts) != 4:
+
+        await update.message.reply_text(
+            "❌ Format:\n\n"
+            "/addverification key | name | price | stock\n\n"
+            "Example:\n"
+            "/addverification whatsapp | "
+            "📱 WhatsApp Verification | "
+            "₦2,500 | 20"
+        )
+
+        return
+
+    key, name, price, stock = parts
+
+    if not all(
+        character.isalnum() or character == "_"
+        for character in key
+    ):
+
+        await update.message.reply_text(
+            "❌ Key can only contain "
+            "letters, numbers and underscores."
+        )
+
+        return
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    try:
+
+        cursor.execute("""
+            INSERT INTO verifications
+            (key, name, price, stock)
+            VALUES (?, ?, ?, ?)
+        """, (
+            key.lower(),
+            name,
+            price,
+            stock
+        ))
+
+        conn.commit()
+
+    except sqlite3.IntegrityError:
+
+        conn.close()
+
+        await update.message.reply_text(
+            "❌ That verification key already exists."
+        )
+
+        return
+
+    conn.close()
+
+    await update.message.reply_text(
+        "✅ Verification service added!\n\n"
+        f"🔑 Key: {key.lower()}\n"
+        f"📌 Name: {name}\n"
+        f"💰 Price: {price}\n"
+        f"📦 Stock: {stock}"
+    )
+
+
+async def change_verification_price(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if not await admin_only(update):
+        return
+
+    raw = update.message.text.partition(
+        " "
+    )[2].strip()
+
+    parts = [
+        part.strip()
+        for part in raw.split("|")
+    ]
+
+    if len(parts) != 2:
+
+        await update.message.reply_text(
+            "❌ Format:\n\n"
+            "/changeverificationprice key | new price\n\n"
+            "Example:\n"
+            "/changeverificationprice whatsapp | ₦2,500"
+        )
+
+        return
+
+    key, price = parts
+
+    item = get_verification(
+        key.lower()
+    )
+
+    if not item:
+
+        await update.message.reply_text(
+            "❌ Verification service not found."
+        )
+
+        return
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        UPDATE verifications
+        SET price = ?
+        WHERE key = ?
+    """, (
+        price,
+        key.lower()
+    ))
+
+    conn.commit()
+    conn.close()
+
+    await update.message.reply_text(
+        "✅ Verification price updated!\n\n"
+        f"{item['name']}\n"
+        f"💰 New price: {price}"
+    )
+
+
+async def change_verification_stock(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if not await admin_only(update):
+        return
+
+    raw = update.message.text.partition(
+        " "
+    )[2].strip()
+
+    parts = [
+        part.strip()
+        for part in raw.split("|")
+    ]
+
+    if len(parts) != 2:
+
+        await update.message.reply_text(
+            "❌ Format:\n\n"
+            "/changeverificationstock key | new stock\n\n"
+            "Example:\n"
+            "/changeverificationstock whatsapp | 20"
+        )
+
+        return
+
+    key, stock = parts
+
+    item = get_verification(
+        key.lower()
+    )
+
+    if not item:
+
+        await update.message.reply_text(
+            "❌ Verification service not found."
+        )
+
+        return
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        UPDATE verifications
+        SET stock = ?
+        WHERE key = ?
+    """, (
+        stock,
+        key.lower()
+    ))
+
+    conn.commit()
+    conn.close()
+
+    await update.message.reply_text(
+        "✅ Verification stock updated!\n\n"
+        f"{item['name']}\n"
+        f"📦 New stock: {stock}"
+    )
+
+
+async def delete_verification(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if not await admin_only(update):
+        return
+
+    key = update.message.text.partition(
+        " "
+    )[2].strip().lower()
+
+    if not key:
+
+        await update.message.reply_text(
+            "❌ Example:\n"
+            "/deleteverification whatsapp"
+        )
+
+        return
+
+    item = get_verification(key)
+
+    if not item:
+
+        await update.message.reply_text(
+            "❌ Verification service not found."
+        )
+
+        return
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "DELETE FROM verifications WHERE key = ?",
+        (key,)
+    )
+
+    conn.commit()
+    conn.close()
+
+    await update.message.reply_text(
+        f"🗑️ Verification service deleted:\n"
+        f"{item['name']}"
+    )
+
+
+# =========================
 # NORMAL MESSAGES
 # =========================
 
@@ -966,6 +1377,42 @@ def main():
 
     app.add_handler(
         CommandHandler("paymentinfo", payment_info)
+    )
+
+    # Verification commands
+    app.add_handler(
+        CommandHandler(
+            "verifications",
+            verifications_command
+        )
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "addverification",
+            add_verification
+        )
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "changeverificationprice",
+            change_verification_price
+        )
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "changeverificationstock",
+            change_verification_stock
+        )
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "deleteverification",
+            delete_verification
+        )
     )
 
     # Buttons
