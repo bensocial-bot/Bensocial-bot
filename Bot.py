@@ -6,6 +6,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
+
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -14,6 +15,7 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
+
 
 # ============================================================
 # CONFIGURATION
@@ -39,61 +41,73 @@ DEFAULT_SERVICES = {
         "price": "₦4,500",
         "stock": "Available",
     },
+
     "textnow": {
         "name": "📲 TextNow",
         "price": "₦2,200",
         "stock": "Available",
     },
+
     "esim": {
         "name": "🌐 eSIM",
         "price": "₦25,000",
         "stock": "Available",
     },
+
     "facebook": {
         "name": "📘 Facebook",
         "price": "₦2,300",
         "stock": "Available",
     },
+
     "twitter": {
         "name": "🐦 Twitter",
         "price": "₦2,860",
         "stock": "Available",
     },
+
     "usa_facebook": {
         "name": "🇺🇸 USA Facebook",
         "price": "₦2,200",
         "stock": "35",
     },
+
     "video_tools": {
         "name": "📹 2026 Video Call Tools",
         "price": "₦56,000",
         "stock": "7",
     },
+
     "telegram_verification": {
         "name": "✅ Telegram Verification",
         "price": "₦10,000",
         "stock": "9",
     },
+
     "apple": {
         "name": "🍎 Apple iCloud",
         "price": "₦7,000",
         "stock": "24",
     },
+
     "france_tiktok": {
         "name": "🇫🇷 France TikTok",
         "price": "₦1,800",
         "stock": "6",
     },
+
     "hma": {
         "name": "🔐 HMA VPN — 1 Month",
         "price": "₦3,780",
         "stock": "62",
     },
+
     "expressvpn": {
         "name": "🔐 ExpressVPN — 1 Month",
         "price": "₦3,800",
         "stock": "25",
     },
+
     "instagram": {
         "name": "📸 USA Instagram",
         "price": "₦2,300",
@@ -111,6 +125,7 @@ def get_db():
 
 
 def init_database():
+
     conn = get_db()
     cursor = conn.cursor()
 
@@ -130,7 +145,9 @@ def init_database():
         )
     """)
 
+    # Add default services
     for key, service in DEFAULT_SERVICES.items():
+
         cursor.execute("""
             INSERT OR IGNORE INTO services
             (key, name, price, stock)
@@ -142,7 +159,7 @@ def init_database():
             service["stock"],
         ))
 
-    # Current payment account
+    # Default payment details
     defaults = {
         "bank": "OPay",
         "account_name": "TOLUWANI BENJAMIN/Bensocial",
@@ -150,17 +167,22 @@ def init_database():
     }
 
     for key, value in defaults.items():
+
         cursor.execute("""
             INSERT OR IGNORE INTO settings
             (key, value)
             VALUES (?, ?)
-        """, (key, value))
+        """, (
+            key,
+            value,
+        ))
 
     conn.commit()
     conn.close()
 
 
 def get_setting(key):
+
     conn = get_db()
     cursor = conn.cursor()
 
@@ -180,6 +202,7 @@ def get_setting(key):
 
 
 def set_setting(key, value):
+
     conn = get_db()
     cursor = conn.cursor()
 
@@ -198,6 +221,7 @@ def set_setting(key, value):
 
 
 def get_services():
+
     conn = get_db()
     cursor = conn.cursor()
 
@@ -222,6 +246,7 @@ def get_services():
 
 
 def get_service(key):
+
     conn = get_db()
     cursor = conn.cursor()
 
@@ -253,6 +278,7 @@ def get_service(key):
 # ============================================================
 
 def is_admin(update: Update):
+
     user = update.effective_user
 
     if not user:
@@ -268,6 +294,7 @@ async def admin_only(update: Update):
     if not is_admin(update):
 
         if update.message:
+
             await update.message.reply_text(
                 "⛔ Admin only."
             )
@@ -381,10 +408,12 @@ async def service_selected(
         f"{service['name']}\n\n"
         f"💰 Price: {service['price']}\n"
         f"📦 Stock: {service['stock']}\n\n"
+
         "💳 Payment Details\n"
         f"Bank: {bank}\n"
         f"Account Name: {account_name}\n"
         f"Account Number: {account_number}\n\n"
+
         "After payment, contact the admin "
         "with your payment receipt/order details."
     )
@@ -396,6 +425,7 @@ async def service_selected(
                 url=f"https://t.me/{ADMIN_USERNAME}"
             )
         ],
+
         [
             InlineKeyboardButton(
                 "⬅️ Back to Services",
@@ -494,6 +524,7 @@ async def add_service(
         await update.message.reply_text(
             "❌ Format:\n\n"
             "/addservice key | name | price | stock\n\n"
+
             "Example:\n"
             "/addservice "
             "tiktok_followers | "
@@ -552,6 +583,7 @@ async def add_service(
 
     await update.message.reply_text(
         "✅ Service added!\n\n"
+
         f"🔑 Key: {key}\n"
         f"📌 Name: {name}\n"
         f"💰 Price: {price}\n"
@@ -583,6 +615,7 @@ async def change_price(
         await update.message.reply_text(
             "❌ Format:\n\n"
             "/changeprice key | new price\n\n"
+
             "Example:\n"
             "/changeprice whatsapp | ₦5,000"
         )
@@ -649,6 +682,7 @@ async def change_stock(
         await update.message.reply_text(
             "❌ Format:\n\n"
             "/stock key | new stock\n\n"
+
             "Example:\n"
             "/stock whatsapp | 20"
         )
@@ -825,9 +859,11 @@ async def change_account(
             "account_number",
             "number",
         ):
+
             account_number = value
 
         elif label == "bank":
+
             bank = value
 
         elif label in (
@@ -835,6 +871,7 @@ async def change_account(
             "account_name",
             "name",
         ):
+
             account_name = value
 
     # One-line format
@@ -896,6 +933,7 @@ async def change_account(
 
     await update.message.reply_text(
         "✅ PAYMENT ACCOUNT UPDATED!\n\n"
+
         f"🏦 Bank: {bank}\n"
         f"👤 Account Name: {account_name}\n"
         f"💳 Account Number: {account_number}"
@@ -916,9 +954,12 @@ async def payment_info(
 
     await update.message.reply_text(
         "💳 CURRENT PAYMENT DETAILS\n\n"
+
         f"🏦 Bank: {get_setting('bank')}\n"
+
         f"👤 Account Name: "
         f"{get_setting('account_name')}\n"
+
         f"💳 Account Number: "
         f"{get_setting('account_number')}"
     )
@@ -945,12 +986,25 @@ async def handle_message(
 
 def main():
 
+    # --------------------------------------------------------
+    # CHECK BOT TOKEN
+    # --------------------------------------------------------
+
     if not BOT_TOKEN:
+
         raise RuntimeError(
             "BOT_TOKEN environment variable is missing."
         )
 
+    # --------------------------------------------------------
+    # INITIALIZE DATABASE
+    # --------------------------------------------------------
+
     init_database()
+
+    # --------------------------------------------------------
+    # CREATE APPLICATION
+    # --------------------------------------------------------
 
     app = (
         Application
@@ -959,9 +1013,9 @@ def main():
         .build()
     )
 
-    # --------------------------------------------------------
+    # ========================================================
     # CUSTOMER COMMANDS
-    # --------------------------------------------------------
+    # ========================================================
 
     app.add_handler(
         CommandHandler(
@@ -977,9 +1031,9 @@ def main():
         )
     )
 
-    # --------------------------------------------------------
+    # ========================================================
     # ADMIN COMMANDS
-    # --------------------------------------------------------
+    # ========================================================
 
     app.add_handler(
         CommandHandler(
@@ -1037,9 +1091,9 @@ def main():
         )
     )
 
-    # --------------------------------------------------------
+    # ========================================================
     # INLINE BUTTONS
-    # --------------------------------------------------------
+    # ========================================================
 
     app.add_handler(
         CallbackQueryHandler(
@@ -1055,9 +1109,9 @@ def main():
         )
     )
 
-    # --------------------------------------------------------
+    # ========================================================
     # NORMAL TEXT
-    # --------------------------------------------------------
+    # ========================================================
 
     app.add_handler(
         MessageHandler(
@@ -1066,16 +1120,49 @@ def main():
         )
     )
 
-    print("Bensocial Bot is running...")
+    # ========================================================
+    # RENDER WEBHOOK
+    # ========================================================
 
-    # IMPORTANT:
-    # Do NOT use asyncio.run()
-    # Do NOT manually call Updater.start_polling()
-    # python-telegram-bot manages the event loop here.
-    app.run_polling(
-        drop_pending_updates=True
+    print("Bensocial Bot is starting...")
+
+    port = int(
+        os.environ.get(
+            "PORT",
+            "10000"
+        )
     )
 
+    render_url = os.environ.get(
+        "RENDER_EXTERNAL_URL"
+    )
+
+    if not render_url:
+
+        raise RuntimeError(
+            "RENDER_EXTERNAL_URL is missing."
+        )
+
+    webhook_url = (
+        f"{render_url}/{BOT_TOKEN}"
+    )
+
+    print(
+        f"Webhook server starting on port {port}"
+    )
+
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=port,
+        url_path=BOT_TOKEN,
+        webhook_url=webhook_url,
+        drop_pending_updates=True,
+    )
+
+
+# ============================================================
+# START PROGRAM
+# ============================================================
 
 if __name__ == "__main__":
     main()
