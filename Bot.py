@@ -1,39 +1,30 @@
 import os
 import sqlite3
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-)
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
-    MessageHandler,
     ContextTypes,
+    MessageHandler,
     filters,
 )
 
 # ============================================================
-# CONFIG
+# SETTINGS
 # ============================================================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Your Telegram username WITHOUT @
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "silverfoxoftiktok")
-
-# Strongly recommended:
-# Add ADMIN_ID to Render Environment Variables.
-# Example: 123456789
-ADMIN_ID = os.getenv("ADMIN_ID", "")
+ADMIN_USERNAME = os.getenv(
+    "ADMIN_USERNAME",
+    "silverfoxoftiktok"
+).lstrip("@")
 
 PORT = int(os.getenv("PORT", "10000"))
-
-# Render gives your service its public URL.
-# Add WEBHOOK_URL to Render Environment Variables:
-# https://your-service-name.onrender.com
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "").rstrip("/")
 
 DB_FILE = "bensocial.db"
 
@@ -42,21 +33,58 @@ DB_FILE = "bensocial.db"
 # DEFAULT PAYMENT DETAILS
 # ============================================================
 
-BANK = "Opay (Paycom)"
-ACCOUNT_NAME = "Toluwani Awe"
-ACCOUNT_NUMBER = "8165405921"
+DEFAULT_BANK = "Opay (Paycom)"
+DEFAULT_ACCOUNT_NAME = "Toluwani Awe"
+DEFAULT_ACCOUNT_NUMBER = "8165405921"
+
+
+# ============================================================
+# DEFAULT SERVICES
+# ============================================================
+
+DEFAULT_SERVICES = [
+    ("whatsapp", "📱 WhatsApp Number", "₦4,500", "Available"),
+    ("textnow", "📲 TextNow", "₦2,200", "Available"),
+    ("esim", "🌐 eSIM", "₦25,000", "Available"),
+    ("facebook", "📘 Facebook", "₦2,300", "Available"),
+    ("twitter", "🐦 Twitter/X", "₦2,860", "Available"),
+    ("usa_facebook", "🇺🇸 USA Facebook", "₦2,200", "35"),
+    ("video_tools", "📹 Video Call Tools", "₦56,000", "7"),
+    (
+        "telegram_verification",
+        "✅ Telegram Verification",
+        "₦10,000",
+        "9",
+    ),
+    ("apple", "🍎 Apple iCloud", "₦7,000", "24"),
+    ("france_tiktok", "🇫🇷 France TikTok", "₦1,800", "6"),
+    ("hma", "🔐 HMA VPN — 1 Month", "₦3,780", "62"),
+    (
+        "expressvpn",
+        "🔐 ExpressVPN — 1 Month",
+        "₦3,800",
+        "25",
+    ),
+    ("instagram", "📸 USA Instagram", "₦2,300", "23"),
+    (
+        "tiktok_boost",
+        "🎵 TikTok Followers — 1K",
+        "₦4,536",
+        "Available",
+    ),
+]
 
 
 # ============================================================
 # DATABASE
 # ============================================================
 
-def db():
+def get_db():
     return sqlite3.connect(DB_FILE)
 
 
 def init_database():
-    conn = db()
+    conn = get_db()
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -69,8 +97,7 @@ def init_database():
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS services (
-            service_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            service_key TEXT UNIQUE NOT NULL,
+            service_key TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             price TEXT NOT NULL,
             stock TEXT NOT NULL
@@ -84,66 +111,34 @@ def init_database():
         )
     """)
 
-    conn.commit()
-    conn.close()
-
-    # Add default services only if database is empty
-    add_default_services()
-
-
-def add_default_services():
-    conn = db()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT COUNT(*) FROM services")
-    count = cursor.fetchone()[0]
-
-    if count == 0:
-        default_services = [
-            ("whatsapp", "📱 WhatsApp Number", "₦4,500", "Available"),
-            ("textnow", "📲 TextNow", "₦2,200", "Available"),
-            ("esim", "🌐 eSIM", "₦25,000", "Available"),
-            ("facebook", "📘 Facebook", "₦2,300", "Available"),
-            ("twitter", "🐦 Twitter", "₦2,860", "Available"),
-            ("usa_facebook", "🇺🇸 USA Facebook", "₦2,200", "35"),
-            ("video_tools", "📹 Video Call Tools", "₦56,000", "7"),
-            ("telegram_verification",
-             "✅ Telegram Verification",
-             "₦10,000",
-             "9"),
-            ("apple", "🍎 Apple iCloud", "₦7,000", "24"),
-            ("france_tiktok",
-             "🇫🇷 France TikTok",
-             "₦1,800",
-             "6"),
-            ("hma", "🔐 HMA VPN — 1 Month", "₦3,780", "62"),
-            ("expressvpn",
-             "🔐 ExpressVPN — 1 Month",
-             "₦3,800",
-             "25"),
-            ("instagram",
-             "📸 USA Instagram",
-             "₦2,300",
-             "23"),
-            ("tiktok_boost",
-             "🎵 TikTok Boost — 1K",
-             "₦4,536",
-             "Available"),
-        ]
-
-        cursor.executemany("""
-            INSERT INTO services
+    # Add default services if they don't exist.
+    for service in DEFAULT_SERVICES:
+        cursor.execute("""
+            INSERT OR IGNORE INTO services
             (service_key, name, price, stock)
             VALUES (?, ?, ?, ?)
-        """, default_services)
+        """, service)
 
-        conn.commit()
+    # Add default payment settings.
+    defaults = {
+        "bank": DEFAULT_BANK,
+        "account_name": DEFAULT_ACCOUNT_NAME,
+        "account_number": DEFAULT_ACCOUNT_NUMBER,
+    }
 
+    for key, value in defaults.items():
+        cursor.execute("""
+            INSERT OR IGNORE INTO settings
+            (key, value)
+            VALUES (?, ?)
+        """, (key, value))
+
+    conn.commit()
     conn.close()
 
 
 def register_user(user):
-    conn = db()
+    conn = get_db()
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -160,43 +155,46 @@ def register_user(user):
     conn.close()
 
 
-# ============================================================
-# ADMIN CHECK
-# ============================================================
+def get_setting(key):
+    conn = get_db()
+    cursor = conn.cursor()
 
-def is_admin(user):
-    # Best method: Telegram numeric ID
-    if ADMIN_ID:
-        return str(user.id) == str(ADMIN_ID)
+    cursor.execute(
+        "SELECT value FROM settings WHERE key = ?",
+        (key,)
+    )
 
-    # Fallback to username
-    username = (user.username or "").lower().replace("@", "")
-    return username == ADMIN_USERNAME.lower().replace("@", "")
+    result = cursor.fetchone()
+    conn.close()
 
+    if result:
+        return result[0]
 
-async def admin_only(update: Update):
-    if not is_admin(update.effective_user):
-        if update.message:
-            await update.message.reply_text(
-                "❌ You are not authorized to use this command."
-            )
-        return False
-
-    return True
+    return ""
 
 
-# ============================================================
-# SERVICES
-# ============================================================
+def set_setting(key, value):
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT OR REPLACE INTO settings
+        (key, value)
+        VALUES (?, ?)
+    """, (key, value))
+
+    conn.commit()
+    conn.close()
+
 
 def get_services():
-    conn = db()
+    conn = get_db()
     cursor = conn.cursor()
 
     cursor.execute("""
         SELECT service_key, name, price, stock
         FROM services
-        ORDER BY service_id ASC
+        ORDER BY rowid ASC
     """)
 
     rows = cursor.fetchall()
@@ -206,7 +204,7 @@ def get_services():
 
 
 def get_service(key):
-    conn = db()
+    conn = get_db()
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -221,15 +219,43 @@ def get_service(key):
     return row
 
 
+# ============================================================
+# ADMIN
+# ============================================================
+
+def is_admin(user):
+    if not user:
+        return False
+
+    username = (user.username or "").lstrip("@").lower()
+
+    return username == ADMIN_USERNAME.lower()
+
+
+async def check_admin(update):
+    if not is_admin(update.effective_user):
+        if update.message:
+            await update.message.reply_text(
+                "❌ Admin access only."
+            )
+        return False
+
+    return True
+
+
+# ============================================================
+# CUSTOMER MENU
+# ============================================================
+
 def services_keyboard():
+    services = get_services()
+
     buttons = []
 
-    service_items = get_services()
-
-    for i in range(0, len(service_items), 2):
+    for i in range(0, len(services), 2):
         row = []
 
-        for key, name, price, stock in service_items[i:i + 2]:
+        for key, name, price, stock in services[i:i + 2]:
             row.append(
                 InlineKeyboardButton(
                     name,
@@ -269,49 +295,31 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================================
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     if is_admin(update.effective_user):
-        text = (
-            "🤖 Bensocial Admin Commands\n\n"
-
-            "➕ Add service:\n"
-            "/addservice key | name | price | stock\n\n"
-
-            "💰 Change price:\n"
-            "/changeprice key | new price\n\n"
-
-            "📦 Change stock:\n"
-            "/stock key | new stock\n\n"
-
-            "📋 List services:\n"
-            "/services\n\n"
-
-            "🗑 Delete service:\n"
-            "/deleteservice key\n\n"
-
-            "💳 Change payment account:\n"
-            "/setaccount bank | account name | account number\n\n"
-
-            "👥 Registered users:\n"
-            "/users\n\n"
-
-            "🔐 Admin menu:\n"
-            "/admin"
+        await update.message.reply_text(
+            "🔐 ADMIN COMMANDS\n\n"
+            "/admin — Admin menu\n"
+            "/addservice — Add service\n"
+            "/changeprice — Change price\n"
+            "/stock — Change stock\n"
+            "/services — View services\n"
+            "/deleteservice — Delete service\n"
+            "/setbank — Change bank\n"
+            "/setaccountname — Change account name\n"
+            "/setaccountnumber — Change account number\n"
+            "/paymentinfo — View payment details\n"
+            "/users — View registered users\n"
         )
-
     else:
-        text = (
-            "🤖 Bensocial Bot Help\n\n"
+        await update.message.reply_text(
+            "🤖 Bensocial Bot\n\n"
             "/start — Open services\n"
-            "/help — Show help\n\n"
-            "Choose a service to view its price and availability."
+            "/help — Show help"
         )
-
-    await update.message.reply_text(text)
 
 
 # ============================================================
-# SERVICE SELECTED
+# SERVICE SELECTION
 # ============================================================
 
 async def service_selected(
@@ -333,16 +341,18 @@ async def service_selected(
 
     _, name, price, stock = service
 
+    bank = get_setting("bank")
+    account_name = get_setting("account_name")
+    account_number = get_setting("account_number")
+
     text = (
         f"{name}\n\n"
         f"💰 Price: {price}\n"
         f"📦 Stock: {stock}\n\n"
-
-        "💳 Payment Details\n"
-        f"Bank: {BANK}\n"
-        f"Account Name: {ACCOUNT_NAME}\n"
-        f"Account Number: {ACCOUNT_NUMBER}\n\n"
-
+        "💳 PAYMENT DETAILS\n"
+        f"Bank: {bank}\n"
+        f"Account Name: {account_name}\n"
+        f"Account Number: {account_number}\n\n"
         "After payment, contact the admin with your "
         "payment receipt/order details."
     )
@@ -356,7 +366,7 @@ async def service_selected(
         ],
         [
             InlineKeyboardButton(
-                "⬅️ Back to Services",
+                "⬅️ Back",
                 callback_data="back_services"
             )
         ],
@@ -368,11 +378,7 @@ async def service_selected(
     )
 
 
-# ============================================================
-# BACK
-# ============================================================
-
-async def back_to_services(
+async def back_services(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
@@ -389,9 +395,11 @@ async def back_to_services(
 # ADMIN MENU
 # ============================================================
 
-async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not await admin_only(update):
+async def admin_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    if not await check_admin(update):
         return
 
     keyboard = InlineKeyboardMarkup([
@@ -399,33 +407,33 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton(
                 "➕ Add Service",
                 callback_data="admin_add"
-            ),
+            )
+        ],
+        [
             InlineKeyboardButton(
                 "💰 Change Price",
                 callback_data="admin_price"
-            )
-        ],
-        [
+            ),
             InlineKeyboardButton(
                 "📦 Change Stock",
                 callback_data="admin_stock"
-            ),
-            InlineKeyboardButton(
-                "📋 Services",
-                callback_data="admin_services"
             )
         ],
         [
             InlineKeyboardButton(
-                "🗑 Delete Service",
-                callback_data="admin_delete"
+                "📋 Services",
+                callback_data="admin_services"
+            ),
+            InlineKeyboardButton(
+                "💳 Payment",
+                callback_data="admin_payment"
             )
-        ]
+        ],
     ])
 
     await update.message.reply_text(
-        "🔐 Bensocial Admin Panel\n\n"
-        "You can also use the commands directly.",
+        "🔐 BENSOCIAL ADMIN PANEL\n\n"
+        "Choose an option or use the commands.",
         reply_markup=keyboard
     )
 
@@ -434,36 +442,28 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ADD SERVICE
 # ============================================================
 
-async def add_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not await admin_only(update):
+async def addservice(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    if not await check_admin(update):
         return
 
-    text = update.message.text
-
-    parts = text[len("/addservice"):].strip().split("|")
+    raw = update.message.text.partition(" ")[2].strip()
+    parts = [x.strip() for x in raw.split("|")]
 
     if len(parts) != 4:
         await update.message.reply_text(
-            "❌ Format:\n\n"
+            "❌ Correct format:\n\n"
             "/addservice key | name | price | stock\n\n"
             "Example:\n"
-            "/addservice web_design | 🌐 Website Design | ₦30,000 | 10"
+            "/addservice snapchat | 👻 Snapchat | ₦3,000 | 10"
         )
         return
 
-    key, name, price, stock = [
-        x.strip() for x in parts
-    ]
+    key, name, price, stock = parts
 
-    if not key.replace("_", "").isalnum():
-        await update.message.reply_text(
-            "❌ Invalid key.\n\n"
-            "Use only letters, numbers and underscores."
-        )
-        return
-
-    conn = db()
+    conn = get_db()
     cursor = conn.cursor()
 
     try:
@@ -471,12 +471,7 @@ async def add_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
             INSERT INTO services
             (service_key, name, price, stock)
             VALUES (?, ?, ?, ?)
-        """, (
-            key,
-            name,
-            price,
-            stock
-        ))
+        """, (key, name, price, stock))
 
         conn.commit()
 
@@ -491,7 +486,7 @@ async def add_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     await update.message.reply_text(
-        "✅ Service added successfully!\n\n"
+        "✅ SERVICE ADDED\n\n"
         f"🔑 Key: {key}\n"
         f"🛍️ Name: {name}\n"
         f"💰 Price: {price}\n"
@@ -503,53 +498,49 @@ async def add_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # CHANGE PRICE
 # ============================================================
 
-async def change_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not await admin_only(update):
+async def changeprice(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    if not await check_admin(update):
         return
 
-    parts = update.message.text[len("/changeprice"):].strip().split("|")
+    raw = update.message.text.partition(" ")[2].strip()
+    parts = [x.strip() for x in raw.split("|")]
 
     if len(parts) != 2:
         await update.message.reply_text(
-            "❌ Format:\n\n"
+            "❌ Correct format:\n\n"
             "/changeprice key | new price\n\n"
             "Example:\n"
             "/changeprice whatsapp | ₦5,000"
         )
         return
 
-    key, new_price = [
-        x.strip() for x in parts
-    ]
+    key, price = parts
 
-    service = get_service(key)
-
-    if not service:
+    if not get_service(key):
         await update.message.reply_text(
             "❌ Service not found."
         )
         return
 
-    conn = db()
+    conn = get_db()
     cursor = conn.cursor()
 
     cursor.execute("""
         UPDATE services
         SET price = ?
         WHERE service_key = ?
-    """, (
-        new_price,
-        key
-    ))
+    """, (price, key))
 
     conn.commit()
     conn.close()
 
     await update.message.reply_text(
-        "✅ Price updated successfully!\n\n"
-        f"🛍️ {service[1]}\n"
-        f"💰 New price: {new_price}"
+        "✅ PRICE UPDATED\n\n"
+        f"🔑 {key}\n"
+        f"💰 New price: {price}"
     )
 
 
@@ -557,81 +548,79 @@ async def change_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # STOCK
 # ============================================================
 
-async def stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not await admin_only(update):
+async def stock(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    if not await check_admin(update):
         return
 
-    parts = update.message.text[len("/stock"):].strip().split("|")
+    raw = update.message.text.partition(" ")[2].strip()
+    parts = [x.strip() for x in raw.split("|")]
 
     if len(parts) != 2:
         await update.message.reply_text(
-            "❌ Format:\n\n"
+            "❌ Correct format:\n\n"
             "/stock key | new stock\n\n"
             "Example:\n"
             "/stock whatsapp | 20"
         )
         return
 
-    key, new_stock = [
-        x.strip() for x in parts
-    ]
+    key, new_stock = parts
 
-    service = get_service(key)
-
-    if not service:
+    if not get_service(key):
         await update.message.reply_text(
             "❌ Service not found."
         )
         return
 
-    conn = db()
+    conn = get_db()
     cursor = conn.cursor()
 
     cursor.execute("""
         UPDATE services
         SET stock = ?
         WHERE service_key = ?
-    """, (
-        new_stock,
-        key
-    ))
+    """, (new_stock, key))
 
     conn.commit()
     conn.close()
 
     await update.message.reply_text(
-        "✅ Stock updated successfully!\n\n"
-        f"🛍️ {service[1]}\n"
+        "✅ STOCK UPDATED\n\n"
+        f"🔑 {key}\n"
         f"📦 New stock: {new_stock}"
     )
 
 
 # ============================================================
-# LIST SERVICES
+# SERVICES LIST
 # ============================================================
 
-async def services_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not await admin_only(update):
+async def services_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    if not await check_admin(update):
         return
 
     services = get_services()
 
     if not services:
         await update.message.reply_text(
-            "📭 No services available."
+            "📭 No services found."
         )
         return
 
-    lines = ["📋 Bensocial Services\n"]
+    lines = ["📋 BENSOCIAL SERVICES\n"]
 
     for key, name, price, stock in services:
         lines.append(
             f"🔑 {key}\n"
-            f"   {name}\n"
-            f"   💰 {price}\n"
-            f"   📦 Stock: {stock}\n"
+            f"{name}\n"
+            f"💰 {price}\n"
+            f"📦 {stock}\n"
         )
 
     await update.message.reply_text(
@@ -643,17 +632,19 @@ async def services_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # DELETE SERVICE
 # ============================================================
 
-async def delete_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not await admin_only(update):
+async def deleteservice(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    if not await check_admin(update):
         return
 
-    key = update.message.text[len("/deleteservice"):].strip()
+    key = update.message.text.partition(" ")[2].strip()
 
     if not key:
         await update.message.reply_text(
-            "❌ Format:\n"
-            "/deleteservice key"
+            "❌ Example:\n"
+            "/deleteservice snapchat"
         )
         return
 
@@ -665,7 +656,7 @@ async def delete_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    conn = db()
+    conn = get_db()
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -677,48 +668,92 @@ async def delete_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     await update.message.reply_text(
-        "✅ Service deleted.\n\n"
-        f"🗑 {service[1]}"
+        f"🗑️ Deleted:\n{service[1]}"
     )
 
 
 # ============================================================
-# PAYMENT DETAILS
+# PAYMENT SETTINGS
 # ============================================================
 
-async def set_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    global BANK
-    global ACCOUNT_NAME
-    global ACCOUNT_NUMBER
-
-    if not await admin_only(update):
+async def setbank(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    if not await check_admin(update):
         return
 
-    parts = update.message.text[len("/setaccount"):].strip().split("|")
+    value = update.message.text.partition(" ")[2].strip()
 
-    if len(parts) != 3:
+    if not value:
         await update.message.reply_text(
-            "❌ Format:\n\n"
-            "/setaccount bank | account name | account number\n\n"
-            "Example:\n"
-            "/setaccount Opay | Bensocial | 1234567890"
+            "Example:\n/setbank Opay (Paycom)"
         )
         return
 
-    bank, account_name, account_number = [
-        x.strip() for x in parts
-    ]
-
-    BANK = bank
-    ACCOUNT_NAME = account_name
-    ACCOUNT_NUMBER = account_number
+    set_setting("bank", value)
 
     await update.message.reply_text(
-        "✅ Payment details updated!\n\n"
-        f"🏦 Bank: {BANK}\n"
-        f"👤 Account Name: {ACCOUNT_NAME}\n"
-        f"💳 Account Number: {ACCOUNT_NUMBER}"
+        f"✅ Bank updated to:\n{value}"
+    )
+
+
+async def setaccountname(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    if not await check_admin(update):
+        return
+
+    value = update.message.text.partition(" ")[2].strip()
+
+    if not value:
+        await update.message.reply_text(
+            "Example:\n/setaccountname Bensocial"
+        )
+        return
+
+    set_setting("account_name", value)
+
+    await update.message.reply_text(
+        f"✅ Account name updated to:\n{value}"
+    )
+
+
+async def setaccountnumber(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    if not await check_admin(update):
+        return
+
+    value = update.message.text.partition(" ")[2].strip()
+
+    if not value:
+        await update.message.reply_text(
+            "Example:\n/setaccountnumber 1234567890"
+        )
+        return
+
+    set_setting("account_number", value)
+
+    await update.message.reply_text(
+        f"✅ Account number updated to:\n{value}"
+    )
+
+
+async def paymentinfo(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    if not await check_admin(update):
+        return
+
+    await update.message.reply_text(
+        "💳 CURRENT PAYMENT DETAILS\n\n"
+        f"Bank: {get_setting('bank')}\n"
+        f"Account Name: {get_setting('account_name')}\n"
+        f"Account Number: {get_setting('account_number')}"
     )
 
 
@@ -726,18 +761,19 @@ async def set_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # USERS
 # ============================================================
 
-async def users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not await admin_only(update):
+async def users_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    if not await check_admin(update):
         return
 
-    conn = db()
+    conn = get_db()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT COUNT(*)
-        FROM users
-    """)
+    cursor.execute(
+        "SELECT COUNT(*) FROM users"
+    )
 
     count = cursor.fetchone()[0]
 
@@ -757,102 +793,123 @@ async def admin_buttons(
     context: ContextTypes.DEFAULT_TYPE
 ):
     query = update.callback_query
-    await query.answer()
 
     if not is_admin(query.from_user):
         await query.answer(
-            "❌ Not authorized.",
+            "❌ Admin only.",
             show_alert=True
         )
         return
 
+    await query.answer()
+
     action = query.data
 
-    if action == "admin_services":
-
-        services = get_services()
-
-        if not services:
-            await query.edit_message_text(
-                "📭 No services."
-            )
-            return
-
-        lines = ["📋 Services\n"]
-
-        for key, name, price, stock in services:
-            lines.append(
-                f"🔑 {key}\n"
-                f"{name}\n"
-                f"💰 {price}\n"
-                f"📦 {stock}\n"
-            )
-
-        await query.edit_message_text(
-            "\n".join(lines)
-        )
-        return
-
-    instructions = {
-        "admin_add":
-            "➕ Add Service\n\n"
+    if action == "admin_add":
+        await query.message.reply_text(
+            "➕ ADD SERVICE\n\n"
             "/addservice key | name | price | stock\n\n"
             "Example:\n"
-            "/addservice web_design | 🌐 Website Design | ₦30,000 | 10",
+            "/addservice snapchat | 👻 Snapchat | ₦3,000 | 10"
+        )
 
-        "admin_price":
-            "💰 Change Price\n\n"
+    elif action == "admin_price":
+        await query.message.reply_text(
+            "💰 CHANGE PRICE\n\n"
             "/changeprice key | new price\n\n"
             "Example:\n"
-            "/changeprice whatsapp | ₦5,000",
+            "/changeprice whatsapp | ₦5,000"
+        )
 
-        "admin_stock":
-            "📦 Change Stock\n\n"
+    elif action == "admin_stock":
+        await query.message.reply_text(
+            "📦 CHANGE STOCK\n\n"
             "/stock key | new stock\n\n"
             "Example:\n"
-            "/stock whatsapp | 20",
-
-        "admin_delete":
-            "🗑 Delete Service\n\n"
-            "/deleteservice key\n\n"
-            "Example:\n"
-            "/deleteservice web_design",
-    }
-
-    await query.edit_message_text(
-        instructions.get(
-            action,
-            "Use /admin to open the admin panel."
+            "/stock whatsapp | 20"
         )
-    )
+
+    elif action == "admin_services":
+        services = get_services()
+
+        text = "📋 SERVICES\n\n"
+
+        for key, name, price, stock in services:
+            text += (
+                f"{key}\n"
+                f"{name}\n"
+                f"💰 {price}\n"
+                f"📦 {stock}\n\n"
+            )
+
+        await query.message.reply_text(text)
+
+    elif action == "admin_payment":
+        await query.message.reply_text(
+            "💳 PAYMENT SETTINGS\n\n"
+            f"Bank: {get_setting('bank')}\n"
+            f"Account Name: {get_setting('account_name')}\n"
+            f"Account Number: {get_setting('account_number')}\n\n"
+            "Change them with:\n"
+            "/setbank\n"
+            "/setaccountname\n"
+            "/setaccountnumber"
+        )
 
 
 # ============================================================
-# NORMAL MESSAGES
+# NORMAL TEXT
 # ============================================================
 
-async def handle_message(
+async def normal_message(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
     register_user(update.effective_user)
 
     await update.message.reply_text(
-        "💬 Please choose a service:",
+        "🛍️ Choose a service:",
         reply_markup=services_keyboard()
     )
 
 
 # ============================================================
-# ERROR HANDLER
+# RENDER HEALTH SERVER
 # ============================================================
 
-async def error_handler(update, context):
-    print("BOT ERROR:", context.error)
+class HealthHandler(BaseHTTPRequestHandler):
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header(
+            "Content-Type",
+            "text/plain"
+        )
+        self.end_headers()
+
+        self.wfile.write(
+            b"Bensocial Bot is online"
+        )
+
+    def log_message(self, format, *args):
+        return
+
+
+def start_health_server():
+    server = HTTPServer(
+        ("0.0.0.0", PORT),
+        HealthHandler
+    )
+
+    print(
+        f"Health server running on port {PORT}"
+    )
+
+    server.serve_forever()
 
 
 # ============================================================
-# MAIN — RENDER WEBHOOK
+# MAIN
 # ============================================================
 
 def main():
@@ -862,13 +919,17 @@ def main():
             "BOT_TOKEN environment variable is missing."
         )
 
-    if not WEBHOOK_URL:
-        raise RuntimeError(
-            "WEBHOOK_URL environment variable is missing."
-        )
-
     init_database()
 
+    # Start Render health server in background.
+    health_thread = threading.Thread(
+        target=start_health_server,
+        daemon=True
+    )
+
+    health_thread.start()
+
+    # Build Telegram application.
     app = (
         Application.builder()
         .token(BOT_TOKEN)
@@ -890,15 +951,15 @@ def main():
     )
 
     app.add_handler(
-        CommandHandler("addservice", add_service)
+        CommandHandler("addservice", addservice)
     )
 
     app.add_handler(
-        CommandHandler("changeprice", change_price)
+        CommandHandler("changeprice", changeprice)
     )
 
     app.add_handler(
-        CommandHandler("stock", stock_command)
+        CommandHandler("stock", stock)
     )
 
     app.add_handler(
@@ -906,18 +967,39 @@ def main():
     )
 
     app.add_handler(
-        CommandHandler("deleteservice", delete_service)
+        CommandHandler("deleteservice", deleteservice)
     )
 
     app.add_handler(
-        CommandHandler("setaccount", set_account)
+        CommandHandler("setbank", setbank)
     )
 
     app.add_handler(
-        CommandHandler("users", users_command)
+        CommandHandler("setaccountname", setaccountname)
     )
 
-    # Service buttons
+    app.add_handler(
+        CommandHandler(
+            "setaccountnumber",
+            setaccountnumber
+        )
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "paymentinfo",
+            paymentinfo
+        )
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "users",
+            users_command
+        )
+    )
+
+    # Customer buttons
     app.add_handler(
         CallbackQueryHandler(
             service_selected,
@@ -927,7 +1009,7 @@ def main():
 
     app.add_handler(
         CallbackQueryHandler(
-            back_to_services,
+            back_services,
             pattern=r"^back_services$"
         )
     )
@@ -944,24 +1026,16 @@ def main():
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
-            handle_message
+            normal_message
         )
     )
 
-    app.add_error_handler(error_handler)
+    print("Bensocial Bot is starting...")
+    print("Telegram polling enabled.")
 
-    print("Bensocial Bot starting with webhook...")
-    print(f"Port: {PORT}")
-    print(f"Webhook: {WEBHOOK_URL}")
-
-    # IMPORTANT:
-    # Webhook mode is used instead of run_polling().
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path=BOT_TOKEN,
-        webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}",
-        drop_pending_updates=True,
+    # Only ONE polling instance should run.
+    app.run_polling(
+        drop_pending_updates=True
     )
 
 
